@@ -101,7 +101,6 @@ command -v ncwa >/dev/null 2>&1 || { echo >&2 "NCO (ncwa) is not installed. Abor
 command -v gvc2zax >/dev/null 2>&1 || { echo >&2 "gvc2zax is not found in your PATH. Aborting."; exit 1; }
 echo "Required tools (cdo, ncwa, gvc2zax) found."
 
-
 #=============================================================================
 # --- MAIN PROCESSING LOOP ---
 #=============================================================================
@@ -125,6 +124,13 @@ for YEAR in $(seq "${FIRST_YEAR}" "${LAST_YEAR}"); do
             continue
         fi
 
+# --- Check for required 'bathymetry' variable ---
+        # gvc2zax requires this variable, so we exit if it's missing.
+        if ! cdo -s showname "${IFILE}" | grep -q -w "bathymetry"; then
+            echo "    ERROR: Variable 'bathymetry' not found in ${IFILE}. Aborting run."
+            exit 1
+        fi
+
         # Intermediate files for this month
         ifile_with_bathy="${TEMP_DIR}/ifile_with_bathy_${YEAR}${MONTH}.nc"
         temp_oxy_with_level="${TEMP_DIR}/temp_oxy_lev_${YEAR}${MONTH}.nc"
@@ -146,18 +152,17 @@ for YEAR in $(seq "${FIRST_YEAR}" "${LAST_YEAR}"); do
         # ---  Step 2: Add bathymetry data, should be redundant---
         echo "    Step 2: Adding bathymetry data..."
         # Now merge the two files, which have identical gridls anndefinition
-        cdo merge "${IFILE}" "${BATHY_FILE}" "${ifile_with_bathy}"
+        # cdo merge "${IFILE}" "${BATHY_FILE}" "${ifile_with_bathy}"
 
         # --- Step 2: Regrid surface layer (0-20m) using gvc2zax ---
         # Assuming the input file now contains the necessary bathymetry variable.
         echo "    Step 2: Regridding surface layer with gvc2zax..."
-        #gvc2zax -z 20,0.5,40 -p -s -i "${IFILE}" "${local_regridded_surf}"
-
-        gvc2zax -z 20,0.5,40 -p -s -i "${ifile_with_bathy}" "${local_regridded_surf}"
+        gvc2zax -z 20,0.5,40 -p -s -i "${IFILE}" "${local_regridded_surf}"
+        #gvc2zax -z 20,0.5,40 -p -s -i "${ifile_with_bathy}" "${local_regridded_surf}"
 
         # --- Step 3: Calculate vertical mean for surface variables ---
         echo "    Step 3: Calculating vertical mean of surface variables..."
-        cdo -vertmean -selname,"${VARS_SURF_MEAN}" "${local_regridded_surf}" "${local_vertmean_surf}"
+        cdo --no_warnings -vertmean -selname,"${VARS_SURF_MEAN}" "${local_regridded_surf}" "${local_vertmean_surf}"
         
         # --- Step 4: Merge bottom oxygen and surface means ---
         # Both files are now 2D, so they will merge into a single timestep.
